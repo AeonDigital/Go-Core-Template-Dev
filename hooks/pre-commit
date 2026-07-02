@@ -1,0 +1,152 @@
+#!/bin/bash
+
+# ==============================================================================
+# SCRIPT: pre-commit
+# DESCRIPTION: Centralized Git Pre-Commit Hook. Validates environment, enforces
+#              strict canonical LF line endings, executes gofumpt layout rules,
+#              and triggers comprehensive golangci-lint static analysis.
+# ==============================================================================
+
+set -euo pipefail
+
+echo "================================================================================"
+echo "[RUN] Starting Go-Core technical linter gate..."
+echo "================================================================================"
+
+# PHASE 0: Dynamic Project Root Discovery via go.mod
+# Capture the exact directory where the developer executed the commit command
+CURRENT_LOOKUP="${PWD}"
+TARGET_ROOT=""
+
+for i in {1..5}; do
+  if [ -f "$CURRENT_LOOKUP/go.mod" ]; then
+    TARGET_ROOT="$CURRENT_LOOKUP"
+    break
+  fi
+  CURRENT_LOOKUP="$(dirname "$CURRENT_LOOKUP")"
+done
+
+if [ -z "$TARGET_ROOT" ]; then
+  echo "================================================================================"
+  echo "[ERR] Dynamic project root discovery failed. Could not locate go.mod."
+  echo "================================================================================"
+  exit 1
+fi
+
+# Navigate to the true module root context where commands must be evaluated
+cd "$TARGET_ROOT"
+
+# Clear Git's local tracking variables to allow standard Go module mapping
+unset GIT_DIR
+unset GIT_WORK_TREE
+unset GIT_INDEX_FILE
+
+
+
+
+# PHASE 1: Immediate Environment & Dependency Verification
+if ! command -v golangci-lint &> /dev/null; then
+  echo "================================================================================"
+  echo "[ERR] golangci-lint execution engine is missing from PATH."
+  echo "      Please install it: https://github.com/golangci/golangci-lint"
+  echo "================================================================================"
+  exit 1
+fi
+
+if ! command -v gofumpt &> /dev/null; then
+  echo "================================================================================"
+  echo "[ERR] gofumpt formatting tool is missing from PATH."
+  echo "      Please install it: https://github.com/mvdan/gofumpt"
+  echo "================================================================================"
+  exit 1
+fi
+
+
+
+
+# PHASE 2: Evaluate Staging Area Components
+STAGED_GO_FILES=$(git diff --cached --name-only --diff-filter=d | grep '\.go$' || true)
+
+if [ -z "$STAGED_GO_FILES" ]; then
+  echo "  [ . ] No Go files found in the staging area. Skipping linter."
+  echo "================================================================================"
+  echo "[END] Pre-commit sequence finished."
+  echo "================================================================================"
+  exit 0
+fi
+
+
+
+
+# PHASE 3: Strict Line Ending Enforcement (Block CRLF - Zero False Positives)
+echo "  [ . ] Checking for non-compliant CRLF line endings..."
+INVALID_EOL_FILES=0
+
+for FILE in $STAGED_GO_FILES; do
+  # Extract the raw object content from Git's staging area and check the absolute EOL
+  if git show :"$FILE" | grep -q $'\r$'; then
+    echo "  [ x ] Error: Windows CRLF line ending detected in: $FILE"
+    INVALID_EOL_FILES=$((INVALID_EOL_FILES + 1))
+  fi
+done
+
+if [ "$INVALID_EOL_FILES" -gt 0 ]; then
+  echo "================================================================================"
+  echo "[ERR] Quality gate denied: Non-canonical CRLF line endings discovered."
+  echo "      Go-Core template requires strict LF line endings across all platforms."
+  echo "      Please execute 'make init-dev' or run 'git config core.autocrlf false'"
+  echo "      and re-stage your files before attempting to commit."
+  echo "================================================================================"
+  exit 1
+fi
+
+echo "  [ v ] Success: All staged Go modules utilize canonical LF line endings."
+
+
+
+
+# PHASE 4: Apply Strict Vertical Formatting Enforcement via gofumpt
+echo "  [ . ] Initializing structural code formatting checks..."
+for FILE in $STAGED_GO_FILES; do
+  if ! gofumpt -l "$FILE" | grep -q .; then
+    echo "  [ v ] $FILE is perfectly formatted."
+  else
+    echo "  [ . ] $FILE requires formatting. Applying gofumpt..."
+    gofumpt -w "$FILE"
+    git add "$FILE"
+  fi
+done
+
+
+
+
+# PHASE 5: Comprehensive Code Quality, Security and Logic Static Analysis Scan
+echo "  [ . ] Running deep analytical validation checks..."
+
+CONFIG_PATH=".dev/linters/golinter.yaml"
+
+if [ ! -f "$CONFIG_PATH" ]; then
+  echo "================================================================================"
+  echo "[ERR] Centralized configuration file not found at: $CONFIG_PATH"
+  echo "================================================================================"
+  exit 1
+fi
+
+# Strategy: Execute from the module root context to ensure correct dependency resolution
+# This forces the linter to use your main go.mod workspace boundaries
+if ! golangci-lint run --config="$CONFIG_PATH" ./...; then
+  echo "================================================================================"
+  echo "[ERR] Static analysis checks failed. Review the technical errors above."
+  echo "================================================================================"
+  exit 1
+fi
+
+
+
+
+echo "================================================================================"
+echo "[OKK] All staged Go code conforms to formatting and semantic standards."
+echo "================================================================================"
+echo "[END] Pre-commit gate completed successfully."
+echo "================================================================================"
+exit 0

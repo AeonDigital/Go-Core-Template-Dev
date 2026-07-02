@@ -1,0 +1,41 @@
+#!/bin/bash
+
+# ==============================================================================
+# SCRIPT: pre-push
+# DESCRIPTION: Centralized Git Pre-Push Hook. Forces synchronization of the
+#              governance submodule (.dev) avoiding pointer locks from amends.
+# ==============================================================================
+
+set -euo pipefail
+
+echo "================================================================================"
+echo "[RUN] Synchronizing core governance standards engine (.dev)..."
+echo "================================================================================"
+
+# Safeguard: Enter the submodule directory to perform a bulletproof fetch & reset
+cd .dev
+git fetch origin --prune --quiet
+git reset --hard origin/main --quiet
+cd ..
+
+# Evaluate if the .dev submodule pointer or physical files shifted after merge
+if [ -n "$(git status --porcelain .dev)" ]; then
+  echo "  [ . ] New organizational standards or tools detected upstream."
+  echo "  [ . ] Generating automated local workspace commitment..."
+  
+  git add .dev
+  
+  # Prevent infinite pre-commit triggers by applying the --no-verify constraint
+  git commit --no-verify -m "chore: sync centralized environment development standards (.dev)"
+  
+  echo "  [ v ] Workspace pointer updated and committed locally."
+else
+  echo "  [ v ] Workspace environment and standards are completely up to date."
+fi
+
+echo "================================================================================"
+echo "[OKK] Remote integration payload is synchronized and ready."
+echo "================================================================================"
+echo "[END] Pre-push validation finished."
+echo "================================================================================"
+exit 0
