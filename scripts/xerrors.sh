@@ -9,7 +9,12 @@
 set -e
 
 # Sourcing external core structural validation and parsing library bundle
-. functions.sh
+. assets/cli.sh
+. assets/editanchors.sh
+. assets/project.sh
+. assets/strings.sh
+. assets/validation.sh
+. assets/vars.sh
 
 
 

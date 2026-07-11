@@ -26,7 +26,7 @@ validate_cli_spec() {
   fi
 
   # Create a local reference alias pointing directly to the global array variables
-  eval "local -n local_spec=\"$array_name\""
+  local -n local_spec="$array_name"
   local total_items="${#local_spec[@]}"
 
   if [ "$total_items" -eq 0 ]; then
@@ -85,7 +85,7 @@ parse_dynamic_flags() {
   # Clear target dynamic global lookup tracking cache entirely
   PARSED_FLAGS=()
 
-  eval "local -n local_spec=\"$spec_array_name\""
+  local -n local_spec="$spec_array_name"
   local raw_arguments=("$@")
   local total_args="${#raw_arguments[@]}"
 
