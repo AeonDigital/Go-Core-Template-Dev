@@ -16,7 +16,7 @@ ________________________________________________________________________________
 
 ## PROPERTY SPECIFICATION DIRECTORY
 
-The core framework evaluates exactly 16 configuration keys for every flag. Each 
+The core framework evaluates exactly 17 configuration keys for every flag. Each 
 property listed below dictates a specific pre-flight compilation constraint or 
 a runtime validation route.
 
@@ -59,8 +59,8 @@ The canonical, immutable primary double-dash identifier for the flag.
 *   **Constraints:** Max 32 characters. Must conform strictly to Kebab-case 
     or Snake-case (`^[a-z0-9_-]+$`).
 *   **Engine Behavior:** Acts as the unique definitive hash key inside the 
-    global parsed registers (`PARSED_FLAGS`). The engine forces the 
-    double-dash `--` format for CLI ingestion.
+command-specific parsed registers (`CMD_<PKG>_<TREE>_PARSED`). The engine 
+    forces the double-dash `--` format for CLI ingestion.
 
 &nbsp;
 

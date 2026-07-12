@@ -17,7 +17,7 @@ ________________________________________________________________________________
 ## TYPE SYSTEM MATRIX OVERVIEW
 
 The framework divides data types into three main tiers to optimize runtime 
-checks and parse behaviors natively in Bash without external binaries. 
+checks and parse behaviors natively in Bash without external binaries.
 
 &nbsp;
 

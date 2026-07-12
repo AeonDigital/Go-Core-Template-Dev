@@ -6,19 +6,6 @@
 #              pre-flight parsing, and deterministic execution pipelines.
 # ==============================================================================
 
-# Global associative array capturing raw un-validated token indicators from the CLI
-declare -gA CORE_CLI_RAW_INPUTS=()
-
-# Global tracking variables mapping active resource execution layers
-declare -g CORE_CLI_ACTIVE_PKG=""
-declare -g CORE_CLI_ACTIVE_COMMAND_TREE=""
-declare -g CORE_CLI_TRIGGER_HELP="0"
-declare -g CORE_CLI_TRIGGER_INTERACTIVE="0"
-
-
-
-
-
 # core_cli_bootstrap_input tokenizes the entrypoint command stream parameters.
 #
 # Arguments:
@@ -40,42 +27,65 @@ core_cli_bootstrap_input() {
 
   local positionals=()
   local has_help_keyword="0"
+  local raw_arguments=("$@")
+  local total_args=${#raw_arguments[@]}
+  local idx=0
 
   # 1. Pipeline Stage A: Scan arguments separating positional commands from flags
-  for arg in "$@"; do
+  while [ "$idx" -lt "$total_args" ]; do
+    local arg="${raw_arguments[$idx]}"
+
     if [[ "$arg" =~ ^- ]]; then
       # Intercept system reserved flags immediately to compute precedence
       if [ "$arg" = "-h" ] || [ "$arg" = "--help" ]; then
         CORE_CLI_TRIGGER_HELP="1"
+        idx=$((idx + 1))
         continue
       fi
 
       if [ "$arg" = "-itr" ] || [ "$arg" = "--interactive" ]; then
         CORE_CLI_TRIGGER_INTERACTIVE="1"
+        idx=$((idx + 1))
         continue
       fi
 
+      local input_key=""
+      local input_value=""
+
       # Parse inline key-value parameters containing equal '=' signs boundaries
       if [[ "$arg" == *=* ]]; then
-        local key="${arg%%=*}"
-        local val="${arg#*=}"
-        # Sanitize keys removing leading dashes cleanly
-        key="${key#--}"
-        key="${key#-}"
-        CORE_CLI_RAW_INPUTS["$key"]="$val"
+        input_key="${arg%%=*}"
+        input_value="${arg#*=}"
       else
-        local key="${arg#--}"
-        key="${key#-}"
-        CORE_CLI_RAW_INPUTS["$key"]="1"
+        input_key="$arg"
+        local next_idx=$((idx + 1))
+        if [ "$next_idx" -lt "$total_args" ] && [[ ! "${raw_arguments[$next_idx]}" =~ ^- ]]; then
+          input_value="${raw_arguments[$next_idx]}"
+          idx="$next_idx"
+        else
+          input_value="1"
+        fi
       fi
+
+      input_key="${input_key#--}"
+      input_key="${input_key#-}"
+
+      if [ "${CORE_CLI_RAW_INPUTS["$input_key"]+x}" = "x" ]; then
+        echo "[ x ] Duplicate flag input '${arg}'."
+        return 1
+      fi
+      CORE_CLI_RAW_INPUTS["$input_key"]="$input_value"
+      idx=$((idx + 1))
     else
       # Catch trailing 'help' as a standalone subcommand keyword token
       if [ "$arg" = "help" ]; then
         has_help_keyword="1"
+        idx=$((idx + 1))
         continue
       fi
       # Accumulate pure non-flag positional commands into order arrays
       positionals+=("$arg")
+      idx=$((idx + 1))
     fi
   done
 
@@ -113,6 +123,75 @@ core_cli_bootstrap_input() {
   return 0
 }
 
+core_cli_validate_flag_aliases() {
+  local p_name="$1"
+  local c_tree="$2"
+
+  local cmd_array_name="CMD_${p_name}_${c_tree}"
+  local order_array_name="${cmd_array_name}_FLAG_ORDER"
+
+  if ! declare -p "$order_array_name" &>/dev/null; then
+    return 0
+  fi
+
+  local -n _val_order="$order_array_name"
+
+  for f_token in "${_val_order[@]}"; do
+    local active_schema="CMD_${p_name}_${c_tree}_FLAG_${f_token}"
+    if ! [[ "$(declare -p "$active_schema" 2>/dev/null)" =~ "declare -A" ]]; then
+      active_schema="CORE_CLI_RUNTIME_FLAG_${f_token}"
+    fi
+
+    local -n _act_rules="$active_schema"
+    local long_key="${_act_rules["long"]}"
+    local short_key="${_act_rules["short"]}"
+
+    local has_long="0"
+    local has_short="0"
+
+    if [ "${CORE_CLI_RAW_INPUTS["$long_key"]+x}" = "x" ]; then
+      has_long="1"
+    fi
+
+    if [ -n "$short_key" ] && [ "${CORE_CLI_RAW_INPUTS["$short_key"]+x}" = "x" ]; then
+      has_short="1"
+    fi
+
+    if [ "$has_long" = "1" ] && [ "$has_short" = "1" ]; then
+      echo "[ x ] Conflicting input: both '--${long_key}' and '-${short_key}' were supplied."
+      return 1
+    fi
+  done
+
+  for raw_key in "${!CORE_CLI_RAW_INPUTS[@]}"; do
+    [ "$raw_key" = "_trigger_help_context" ] && continue
+
+    local recognized="0"
+    for f_token in "${_val_order[@]}"; do
+      local active_schema="CMD_${p_name}_${c_tree}_FLAG_${f_token}"
+      if ! [[ "$(declare -p "$active_schema" 2>/dev/null)" =~ "declare -A" ]]; then
+        active_schema="CORE_CLI_RUNTIME_FLAG_${f_token}"
+      fi
+
+      local -n _act_rules="$active_schema"
+      local long_key="${_act_rules["long"]}"
+      local short_key="${_act_rules["short"]}"
+
+      if [ "$raw_key" = "$long_key" ] || [ "$raw_key" = "$short_key" ]; then
+        recognized="1"
+        break
+      fi
+    done
+
+    if [ "$recognized" = "0" ]; then
+      echo "[ x ] Unknown flag input '${raw_key}'."
+      return 1
+    fi
+  done
+
+  return 0
+}
+
 # core_cli_command_orchestrate routes and executes the lifecycle of a command.
 #
 # Returns:
@@ -129,6 +208,10 @@ core_cli_command_orchestrate() {
   # 1. Pre-flight Check: Verify if the primary command metadata array is registered
   if ! declare -p "$cmd_array_name" &>/dev/null; then
     echo "[ERR] Target command tree '${c_tree}' is unrecognized or unregistered in this CLI."
+    return 1
+  fi
+
+  if ! core_cli_validate_flag_aliases "$p_name" "$c_tree"; then
     return 1
   fi
 
@@ -237,8 +320,6 @@ core_cli_command_orchestrate() {
         done
       else
         # NON-INTERACTIVE MODE LAYER: Evaluate incoming inputs from terminal streams
-        local current_raw_val="${CORE_CLI_RAW_INPUTS["$f_token"]}"
-
         if ! core_cli_flag_validate_value "$current_raw_val" "$active_schema"; then
           # Halt and output error footprint on the absolute first validation failure
           echo "$VALIDATION_ERROR_MSG"
@@ -459,24 +540,7 @@ core_cli_run() {
 
 
   # ----------------------------------------------------------------------------
-  # STEP 2: RECURSIVE AUTO-SOURCING OVER SHELL EXTENSIONS (.sh)
-  # ----------------------------------------------------------------------------
-  # Dynamically compute the absolute physical location where core_cli resides
-  local core_dir_path
-  core_dir_path=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-
-  # Scan, filter out testing components, and load every framework file automatically
-  while IFS= read -r module_source || [ -n "$module_source" ]; do
-    [ -z "$module_source" ] && continue
-    # Skip main.sh to prevent circular evaluation infinite loops during sourcing
-    [[ "$module_source" == */main.sh ]] && continue
-
-    . "$module_source"
-  done < <(find "$core_dir_path" -type f -name "*.sh" ! -name "*_test.sh" | sort)
-
-
-  # ----------------------------------------------------------------------------
-  # STEP 3: RAW ARGUMENT STREAM INGESTION & BOOTSTRAP TOKENS PARSING
+  # STEP 2: RAW ARGUMENT STREAM INGESTION & BOOTSTRAP TOKENS PARSING
   # ----------------------------------------------------------------------------
   if ! core_cli_bootstrap_input "$active_pkg_identifier" "$@"; then
     unset CORE_CLI_ROOT_PATH # Evacuate memory registers upon error interception

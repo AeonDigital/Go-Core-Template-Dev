@@ -18,7 +18,7 @@ engine built entirely in native Bash. Designed to enforce absolute data
 predictability and user-interface harmony across complex repository ecosystems, 
 this framework completely decouples user interaction parsing, dynamic flag 
 validation, and pre-flight schema checking from raw downstream script business 
-logic. 
+logic.
 
 By treating commands and configurations strictly as structured datasets, 
 `core_cli` intercepts development omissions during initialization and 
@@ -67,8 +67,8 @@ ________________________________________________________________________________
 
 The framework operates on a zero-overhead **Plug-and-Play** layout. The root 
 component `main.sh` computes the absolute physical position of its directory 
-structure at runtime, auto-sourcing every internal system utility module 
-seamlessly without imposing file-path tracking burdens onto the developer.
+structure at runtime, auto-sources every internal system utility module 
+seamlessly, and exposes a shared runtime state through the `vars.sh` bundle.
 
 &nbsp;
 
@@ -77,8 +77,8 @@ seamlessly without imposing file-path tracking burdens onto the developer.
 ```text
 core_cli/
 ├── docs/
-│   ├── FLAGS.md              # Detailed 16-key compilation reference manual.
-│   └── TYPES.md              # 19 data classification rules and boundary laws.
+│   ├── FLAGS.md              # Detailed 17-key compilation reference manual.
+│   └── TYPES.md              # Native type validation reference for the engine.
 │ 
 ├── flags/
 │   ├── engine.sh             # Main parameter and scalar orchestration routines.
@@ -242,98 +242,47 @@ declare -gA CMD_XERRORS_code_add_FLAG_scope_OVERRIDE=(
 
 ________________________________________________________________________________
 
-## QUICK-START DEV BLUEPRINT
+## QUICK-START AND EXAMPLE
 
-To build an automated script, developers only need to load the core entrypoint 
-file (`main.sh`) and declare their application metadata structures following 
-the CoC conventions. The engine handles all terminal boundaries, user prompts, 
-and data sanitization workflows automatically.
+A complete example is available in [docs/EXAMPLE.md](./docs/EXAMPLE.md). The
+entrypoint must load [main.sh](./main.sh), define `CORE_CLI_ROOT_PATH`, and then
+register command and flag schemas before calling `core_cli_run`.
 
+## RESERVED FLAGS AND INPUT RULES
 
-&nbsp;
+The framework reserves the following tokens for its own orchestration layer:
 
+* `-h`, `--help`
+* `-itr`, `--interactive`
 
-### 5.1 Step-by-Step Implementation Guide
+Any other flag must be declared in the command schema. If the user provides a
+flag that is not declared, or supplies both long and short aliases for the same
+property, the framework halts with an input error formatted as `[ x ]`.
 
-Follow this three-step blueprint to create a secure corporate command-line 
-utility using the framework capabilities:
+## VALIDATED VALUES STORAGE
 
-1.  **Initialize Entrypoint:** Create your main executable script file and load 
-    the framework central router `. core_cli/main.sh` right after the shell 
-    shebang line.
-2.  **Declare Specs:** Author your shared parameters or specific command 
-    metadata array blocks (`CMD_<PKG>_<TREE>_FLAG_<NAME>`) inside a 
-    configuration script.
-3.  **Trigger Engine Launch:** Invoke the master lifecycle controller function 
-    `core_cli_run` passing your target Package Uppercase Name Tag and the shell 
-    parameter stream (`$@`).
+The engine does not store validated values in a single global map. Instead, it
+writes the final values into command-specific maps named
+`CMD_<PKG>_<TREE>_PARSED`. This is the structure that action hooks should read
+from.
 
+## REQUIRED BOOTSTRAP VARIABLES
 
-&nbsp;
+Before calling `core_cli_run`, the caller must define `CORE_CLI_ROOT_PATH` and
+point it to an existing directory. The framework also uses the following shared
+runtime variables during execution:
 
+* `CORE_CLI_RAW_INPUTS`
+* `CORE_CLI_ACTIVE_PKG`
+* `CORE_CLI_ACTIVE_COMMAND_TREE`
+* `CORE_CLI_TRIGGER_HELP`
+* `CORE_CLI_TRIGGER_INTERACTIVE`
+* `CORE_CLI_VALIDATED_VALUE`
+* `CORE_CLI_VALIDATED_ARRAY`
+* `CORE_CLI_VALIDATED_ASSOC`
+* `VALIDATION_ERROR_MSG`
 
-### 5.2 End-to-Step Ingest Integration Example
-
-Below is the complete, clean script architecture representing how a developer 
-hooks into the framework execution loops natively without custom slicing logic 
-blocks:
-
-```bash
-#!/bin/bash
-
-# ==============================================================================
-# SCRIPT: my_corporate_tool.sh
-# DESCRIPTION: Enterprise execution script utilizing the core_cli framework.
-# ==============================================================================
-
-set -e
-
-# 1. Load the Core CLI Framework via the single main entrypoint router line
-. core_cli/main.sh
-
-# ------------------------------------------------------------------------------
-# THE SPECIFICATION REGISTRY MAPS (CONVENTION COMPLIANCE)
-# ------------------------------------------------------------------------------
-declare -gA CMD_MYTOOL_ORES_status=(
-  ["cmd"]="status"
-  ["summary"]="check operational system integrity markers"
-)
-
-declare -ga CMD_MYTOOL_ORES_status_FLAG_ORDER=( "environment" )
-
-declare -gA CMD_MYTOOL_ORES_status_FLAG_environment=(
-  ["type"]="string"
-  ["required"]="1"
-  ["regex"]="^(prod|stg|dev)\$"
-  ["description"]="Target execution environment indicator filter token."
-  ["tipinput"]="Enter active context target environment stage (prod/stg/dev)"
-)
-
-# ------------------------------------------------------------------------------
-# THE BUSINESS HOOK CONTRACTS (DEVELOPER WORKFLOWS)
-# ------------------------------------------------------------------------------
-
-cmd_mytool_ores_status_main_validate() {
-  # Optional: Enforce cross-parameter validations before firing action logic
-  return 0
-}
-
-cmd_mytool_ores_status_action() {
-  # Read sanitized data parameters directly out of the un-nested map register instance!
-  local env_stage="\${CMD_MYTOOL_ORES_status_PARSED["environment"]}"
-
-  echo "================================================================================"
-  echo "[RUN] Evaluating enterprise infrastructure status under stage: \${env_stage}..."
-  echo "================================================================================"
-  echo "[ v ] All operations verified intact with zero system faults detected."
-}
-
-# ------------------------------------------------------------------------------
-# FRAMEWORK CONTROLLER TRIGGER ASSIGNMENT
-# ------------------------------------------------------------------------------
-core_cli_run "MYTOOL" "\$@"
-```
-
+These declarations are centralized in [vars.sh](./vars.sh).
 
 &nbsp;
 &nbsp;
@@ -347,11 +296,11 @@ For deep technical insights regarding property variables validation or specific
 data type parsing capabilities, please consult the official documents located 
 inside the local framework manual directory tree:
 
-*   **[`core_cli/docs/FLAGS.md`](./core_cli/docs/FLAGS.md):** Deep technical 
-    reference guide explaining the 16 available compilation matrix metadata 
+*   **[`core_cli/docs/FLAGS.md`](./docs/FLAGS.md):** Deep technical 
+    reference guide explaining the 17 available compilation matrix metadata 
     properties, structural constraints mapping, and logic override behaviors.
-*   **[`core_cli/docs/TYPES.md`](./core_cli/docs/TYPES.md):** Architectural 
-    manual detailing the 19 native primitives, structured masks, and system 
+*   **[`core_cli/docs/TYPES.md`](./docs/TYPES.md):** Architectural 
+    manual detailing the native primitives, structured masks, and system 
     environment types supported by the core verification layer.
 
 

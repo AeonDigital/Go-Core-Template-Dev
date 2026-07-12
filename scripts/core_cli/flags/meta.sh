@@ -23,7 +23,7 @@ declare -gA CORE_SUPPORTED_TYPES=(
   
   # System
   ["path"]="1" 
-  ["repativepath"]="1" 
+  ["relativepath"]="1" 
 
   ["filename"]="1" 
   ["filepath"]="1" 
